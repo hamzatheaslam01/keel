@@ -6,7 +6,8 @@ import re
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+import yaml
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class ConstraintIntro(BaseModel):
@@ -134,12 +135,33 @@ class Scenario(BaseModel):
 
 
 def load_scenario(path: Path) -> Scenario:
-    raise NotImplementedError("T-13")
+    path = Path(path)
+    try:
+        data = yaml.safe_load(path.read_text("utf-8"))
+        return Scenario.model_validate(data)
+    except (OSError, yaml.YAMLError, ValidationError) as e:
+        raise ValueError(f"{path.name}: {e}") from e
 
 
 def load_scenarios(directory: Path) -> list[Scenario]:
-    raise NotImplementedError("T-13")
+    paths = sorted(Path(directory).glob("*.yaml"))
+    out = [load_scenario(p) for p in paths if p.name != "tools.yaml"]
+    out.sort(key=lambda s: s.id)
+    ids = [s.id for s in out]
+    dups = sorted({i for i in ids if ids.count(i) > 1})
+    if dups:
+        raise ValueError(f"duplicate scenario ids: {dups}")
+    return out
 
 
 def resolve_output(turn: ToolScriptTurn, root: Path) -> str:
-    raise NotImplementedError("T-13")
+    from bench.mock_tools import generate_filler
+
+    parts: list[str] = []
+    if turn.output_file is not None:
+        parts.append((Path(root) / turn.output_file).read_text("utf-8").rstrip("\n"))
+    if turn.output is not None:
+        parts.append(turn.output)
+    if turn.filler is not None:
+        parts.append(generate_filler(turn.filler))
+    return "\n".join(parts)
