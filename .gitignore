@@ -1,10 +1,17 @@
 .venv/
 __pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
 *.db
+*.db-wal
+*.db-shm
 models/
 keel.yaml
 results/*
 !results/published-*/
+!results/.gitkeep
 viewer/node_modules/
 viewer/.next/
 .env
