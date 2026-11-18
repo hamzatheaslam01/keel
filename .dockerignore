@@ -1,0 +1,10 @@
+.venv
+.git
+results
+models
+viewer
+**/__pycache__
+*.db
+tests
+docs
+scenarios

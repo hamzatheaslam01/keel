@@ -4,6 +4,13 @@ version = "0.1.0"
 description = "Context-guard proxy for agent compaction"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+readme = "README.md"
+authors = [{ name = "Hamza Aslam" }]
+keywords = ["llm", "proxy", "compaction", "agents", "benchmark"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+]
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -12,6 +19,9 @@ dependencies = [
     "pyyaml>=6.0",
     "tokenizers>=0.15",
 ]
+
+[project.urls]
+Repository = "https://github.com/hamzatheaslam01/keel"
 
 [project.scripts]
 keel = "keel.cli:main"
