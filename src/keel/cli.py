@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,9 +28,28 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from keel.app import create_app
+    from keel.config import ConfigError, load_config
+
+    try:
+        cfg = load_config(args.config)
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    uvicorn.run(create_app(cfg), host=cfg.server.host, port=cfg.server.port)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    build_parser().parse_args(argv)
-    raise NotImplementedError("T-10")
+    args = build_parser().parse_args(argv)
+    if args.command == "serve":
+        return _serve(args)
+    if args.bench_command == "run":
+        raise NotImplementedError("T-19")
+    raise NotImplementedError("T-23")
 
 
 if __name__ == "__main__":
