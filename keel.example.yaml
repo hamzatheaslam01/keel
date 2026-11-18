@@ -1,0 +1,29 @@
+server: {host: 127.0.0.1, port: 8400, db: keel.db}
+upstreams:
+  - name: local
+    base_url: http://127.0.0.1:8080/v1     # llama.cpp server
+    models: [qwen3-1.7b, qwen3-4b]
+    extra_body: {chat_template_kwargs: {enable_thinking: false}}
+  - name: hosted
+    base_url: ${HOSTED_BASE_URL}
+    api_key: ${HOSTED_API_KEY}
+    models: [hosted-small]
+compaction:
+  strategy: summarize+pin
+  trigger_tokens: 6000
+  keep_last_n: 4
+  truncate: {older_than_turns: 3, head_tokens: 200, tail_tokens: 100}
+  summarizer: same_as_agent
+pins:
+  auto_extract: false
+  extractor_model: qwen3-1.7b
+  min_confidence: 0.6
+validate:
+  enabled: false
+  judge_model: qwen3-1.7b
+tokenizers:            # local tokenizer.json files; missing -> chars/4 fallback
+  qwen3-1.7b: models/qwen3-1.7b/tokenizer.json
+  qwen3-4b: models/qwen3-4b/tokenizer.json
+model_files:           # hashed into every benchmark run
+  qwen3-1.7b: models/Qwen3-1.7B-Q4_K_M.gguf
+  qwen3-4b: models/Qwen3-4B-Q4_K_M.gguf
