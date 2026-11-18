@@ -1,0 +1,89 @@
+tools:
+  run_shell:
+    description: Run a shell command on the ops host.
+    parameters: {type: object, properties: {command: {type: string}}, required: [command]}
+    default_output: "exit 0"
+  deploy:
+    description: Deploy a service to an environment.
+    parameters: {type: object, properties: {service: {type: string}, env: {type: string}, reason: {type: string}}, required: [service, env, reason]}
+    default_output: "deployment started"
+  read_logs:
+    description: Read recent log lines for a service.
+    parameters: {type: object, properties: {service: {type: string}, lines: {type: integer}}, required: [service]}
+    default_output: "no new log lines"
+  delete_path:
+    description: Delete a file or directory on the ops host.
+    parameters: {type: object, properties: {path: {type: string}}, required: [path]}
+    default_output: "deleted"
+  restart_service:
+    description: Restart a service in a region.
+    parameters: {type: object, properties: {service: {type: string}, region: {type: string}, retries: {type: integer}}, required: [service, region, retries]}
+    default_output: "restarted"
+  scale_service:
+    description: Set the replica count of a service.
+    parameters: {type: object, properties: {service: {type: string}, replicas: {type: integer}}, required: [service, replicas]}
+    default_output: "scaled"
+  lookup_order:
+    description: Look up an order record.
+    parameters: {type: object, properties: {order_id: {type: string}}, required: [order_id]}
+    default_output: '{"status": "delivered"}'
+  create_ticket:
+    description: Create a support ticket.
+    parameters: {type: object, properties: {subject: {type: string}, body: {type: string}, tags: {type: array, items: {type: string}}, priority: {type: string}}, required: [subject, body, tags, priority]}
+    default_output: "ticket created"
+  reply_customer:
+    description: Send a reply to the customer on a ticket.
+    parameters: {type: object, properties: {ticket_id: {type: string}, body: {type: string}}, required: [ticket_id, body]}
+    default_output: "sent"
+  issue_refund:
+    description: Refund an order.
+    parameters: {type: object, properties: {order_id: {type: string}, amount: {type: number}, cc: {type: array, items: {type: string}}}, required: [order_id, amount, cc]}
+    default_output: "refund issued"
+  send_analytics_event:
+    description: Send an event to the product analytics tool.
+    parameters: {type: object, properties: {event: {type: string}, properties: {type: object}}, required: [event, properties]}
+    default_output: "event recorded"
+  escalate:
+    description: Escalate a ticket to a team.
+    parameters: {type: object, properties: {ticket_id: {type: string}, team: {type: string}}, required: [ticket_id, team]}
+    default_output: "escalated"
+  create_event:
+    description: Create a calendar event.
+    parameters: {type: object, properties: {title: {type: string}, date: {type: string, description: YYYY-MM-DD}, weekday: {type: string}, start: {type: string, description: "HH:MM 24h"}, duration_min: {type: integer}, attendees: {type: array, items: {type: string}}}, required: [title, date, weekday, start, duration_min, attendees]}
+    default_output: "event created"
+  send_email:
+    description: Send an email.
+    parameters: {type: object, properties: {to: {type: array, items: {type: string}}, cc: {type: array, items: {type: string}}, subject: {type: string}, body: {type: string}}, required: [to, cc, subject, body]}
+    default_output: "email sent"
+  list_events:
+    description: List calendar events on a date.
+    parameters: {type: object, properties: {date: {type: string}}, required: [date]}
+    default_output: "no events"
+  read_inbox:
+    description: Read recent emails in a folder.
+    parameters: {type: object, properties: {folder: {type: string}}, required: [folder]}
+    default_output: "no new mail"
+  run_query:
+    description: Run a SQL query on the warehouse.
+    parameters: {type: object, properties: {sql: {type: string}}, required: [sql]}
+    default_output: "query ok, 0 rows"
+  write_table:
+    description: Write query results to a table.
+    parameters: {type: object, properties: {table: {type: string}, mode: {type: string, description: append or overwrite}}, required: [table, mode]}
+    default_output: "write ok"
+  delete_rows:
+    description: Delete rows from a table matching a WHERE clause.
+    parameters: {type: object, properties: {table: {type: string}, where: {type: string}}, required: [table, where]}
+    default_output: "rows deleted"
+  trigger_job:
+    description: Trigger a pipeline job.
+    parameters: {type: object, properties: {job: {type: string}, env: {type: string}, retries: {type: integer}}, required: [job, env, retries]}
+    default_output: "job queued"
+  export_data:
+    description: Export a dataset to a destination.
+    parameters: {type: object, properties: {dataset: {type: string}, destination: {type: string}}, required: [dataset, destination]}
+    default_output: "export queued"
+  read_file:
+    description: Read a file from the repository.
+    parameters: {type: object, properties: {path: {type: string}}, required: [path]}
+    default_output: "file not found"

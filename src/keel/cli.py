@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
+from pathlib import Path
+
+import uvicorn
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -12,6 +16,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve = sub.add_parser("serve", help="Run the Keel proxy")
     serve.add_argument("--config", default="keel.yaml")
+    serve.add_argument("--host", default=None)
+    serve.add_argument("--port", type=int, default=None)
 
     bench = sub.add_parser("bench", help="DecayBench-lite")
     bsub = bench.add_subparsers(dest="bench_command", required=True)
@@ -23,23 +29,67 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--out", required=True)
     run.add_argument("--config", default="keel.yaml")
     run.add_argument("--limit", type=int, default=None)
+    run.add_argument("--summarizer", default=None)
+    run.add_argument("--stress", type=int, default=0)
     report = bsub.add_parser("report", help="Write results.md and results.csv")
     report.add_argument("out_dir")
     return p
 
 
-def _serve(args: argparse.Namespace) -> int:
-    import uvicorn
+def _err(msg: str) -> int:
+    print(f"error: {msg}", file=sys.stderr)
+    return 2
 
+
+def _serve(args: argparse.Namespace) -> int:
     from keel.app import create_app
     from keel.config import ConfigError, load_config
 
     try:
         cfg = load_config(args.config)
     except ConfigError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 2
-    uvicorn.run(create_app(cfg), host=cfg.server.host, port=cfg.server.port)
+        return _err(str(e))
+    host = args.host or cfg.server.host
+    port = args.port or cfg.server.port
+    uvicorn.run(create_app(cfg), host=host, port=port)
+    return 0
+
+
+def _bench_run(args: argparse.Namespace) -> int:
+    from bench.runner import CONDITIONS, run_batch
+    from keel.config import ConfigError, load_config
+    from keel.upstream import UpstreamClient
+
+    conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
+    bad = [c for c in conditions if c not in CONDITIONS]
+    if bad:
+        return _err(f"unknown condition(s): {', '.join(bad)}")
+    models = [m.strip() for m in args.models.split(",") if m.strip()]
+    try:
+        cfg = load_config(args.config)
+    except ConfigError as e:
+        return _err(str(e))
+    if args.summarizer and args.summarizer not in UpstreamClient(cfg.upstreams).models():
+        return _err(f"unknown summarizer model: {args.summarizer}")
+    print(f"bench run: models={models} conditions={conditions} seeds={args.seeds} "
+          f"summarizer={args.summarizer or 'same_as_agent'} stress={args.stress}", flush=True)
+    run_id = asyncio.run(run_batch(
+        cfg, Path(args.scenarios), models, conditions, list(range(args.seeds)), Path(args.out),
+        limit=args.limit, summarizer=args.summarizer, stress=args.stress,
+    ))
+    print(run_id)
+    return 0
+
+
+def _bench_report(args: argparse.Namespace) -> int:
+    from bench.report import write_report
+
+    out = Path(args.out_dir)
+    if not (out / "keel.db").is_file():
+        return _err(f"{out / 'keel.db'} not found")
+    md, csv = write_report(out)
+    print(md)
+    print(csv)
     return 0
 
 
@@ -48,8 +98,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         return _serve(args)
     if args.bench_command == "run":
-        raise NotImplementedError("T-19")
-    raise NotImplementedError("T-23")
+        return _bench_run(args)
+    return _bench_report(args)
 
 
 if __name__ == "__main__":

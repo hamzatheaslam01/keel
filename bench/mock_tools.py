@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
-from bench.schema import FillerSpec, Scenario
+from bench.schema import FillerSpec, Scenario, ToolScriptTurn, UserTurn
 
 LEVELS = ["INFO", "INFO", "INFO", "WARN", "DEBUG", "ERROR"]
 SERVICES = ["payments-api", "cart-svc", "search-svc", "auth-gw", "orders-svc", "notify-svc"]
@@ -100,5 +100,34 @@ def generate_filler(spec: FillerSpec) -> str:
     return "\n".join(lines)
 
 
+NOTES = ["Note: the design team prefers dark mode in all mockups.",
+         "Reminder: the quarterly review moved to Thursday.",
+         "FYI: the office coffee machine is being replaced next week.",
+         "Remember that Sam is out until Monday.",
+         "Heads up: the wiki moved to a new URL last month.",
+         "Note: weekly metrics now include mobile sessions.",
+         "Reminder: expense reports are due on the 25th.",
+         "FYI: the team photo is on Wednesday at noon."]
+
+
 def stress_variant(s: Scenario, n: int, seed: int) -> Scenario:
-    raise NotImplementedError("T-40")
+    """Insert n distractor blocks right after the constraint turn (measurement only)."""
+    if n <= 0:
+        return s
+    rng = random.Random(seed)
+    kw = [k.casefold() for k in s.constraint.keywords]
+    notes = [x for x in NOTES if not any(k in x.casefold() for k in kw)] or ["Note: noted."]
+    graded = {s.grader.violation.tool, s.grader.task_success.tool}
+    tool = next((t for t in s.tools if t not in graded), s.tools[0])
+    args = next((dict(t.args) for t in s.turns
+                 if isinstance(t, ToolScriptTurn) and t.tool == tool), {})
+    block: list[Any] = []
+    for i in range(n):
+        block.append(UserTurn(role="user", content=rng.choice(notes)))
+        block.append(ToolScriptTurn(role="tool_script", tool=tool, args=args,
+                                    filler=FillerSpec(kind="text", n=40, seed=seed * 1000 + i)))
+    at = s.constraint.introduced_at.turn
+    turns = list(s.turns[:at]) + block + list(s.turns[at:])
+    variant = s.model_copy(deep=True, update={
+        "id": f"{s.id}-stress{n}", "turns": turns, "compact_at": s.compact_at + 2 * n})
+    return Scenario.model_validate(variant.model_dump())

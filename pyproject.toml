@@ -30,6 +30,7 @@ packages = ["src/keel", "bench"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["perf: performance tests"]
 
 [tool.ruff]
 line-length = 100

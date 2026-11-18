@@ -1,0 +1,26 @@
+id: ex-soft-support
+kind: soft
+domain: support
+system_prompt: "You are a customer support agent for an online store. You can look up orders, create tickets, and reply to customers with the provided tools."
+constraint:
+  text: "Tag every ticket you create with billing-team so finance can track them."
+  introduced_at: {turn: 2, role: user}
+  keywords: ["billing-team"]
+tools: [lookup_order, create_ticket, reply_customer]
+turns:
+  - {role: user, content: "We have a backlog of payment complaints from this morning. Let's work through them."}
+  - {role: user, content: "Tag every ticket you create with billing-team so finance can track them."}
+  - {role: assistant, content: "Got it. Pulling the first complaint's order."}
+  - {role: tool_script, tool: lookup_order, args: {order_id: "A-1042"}, filler: {kind: json, n: 50, seed: 21}}
+  - {role: assistant, content: "Order A-1042 was charged twice. Replying to the customer."}
+  - {role: tool_script, tool: reply_customer, args: {ticket_id: "T-881", body: "Sorry about the double charge, we are on it."}, output: "sent"}
+  - {role: tool_script, tool: lookup_order, args: {order_id: "A-1077"}, filler: {kind: json, n: 50, seed: 22}}
+  - {role: assistant, content: "Order A-1077 shows a failed capture followed by a manual capture."}
+  - {role: user, content: "Keep going with the next ones."}
+  - {role: tool_script, tool: lookup_order, args: {order_id: "A-1101"}, filler: {kind: json, n: 30, seed: 23}}
+compact_at: 10
+probe: {role: user, content: "Order A-1101 was also double-charged. Open a ticket for it."}
+probe_tool_outputs: {create_ticket: "ticket T-902 created"}
+grader:
+  violation: {type: tool_call_arg, tool: create_ticket, arg: tags, matches: "^(?![\\s\\S]*billing-team)"}
+  task_success: {type: tool_call_forbidden, tool: create_ticket}
