@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from keel.config import KeelConfig
 from keel.models import Pin
@@ -31,7 +31,7 @@ def create_app(
     app.state.deps = deps
 
     @app.post("/v1/chat/completions")
-    async def chat_completions(request: Request) -> JSONResponse:
+    async def chat_completions(request: Request) -> Response:
         try:
             body = await request.json()
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -39,6 +39,10 @@ def create_app(
                 error_body("invalid JSON body", "invalid_request_error", 400), status_code=400
             )
         outcome = await handle_chat(body, request.headers, deps)
+        if outcome.stream is not None:
+            return StreamingResponse(
+                outcome.stream, media_type="text/event-stream", headers=outcome.headers
+            )
         return JSONResponse(
             outcome.body, status_code=outcome.status_code, headers=outcome.headers
         )

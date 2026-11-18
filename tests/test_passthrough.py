@@ -68,12 +68,6 @@ async def test_unknown_model_404(config, make_client):
     assert r.status_code == 404 and r.json()["error"]["type"] == "model_not_found"
 
 
-async def test_stream_501(config, make_client):
-    async with make_client(config) as c:
-        r = await c.post("/v1/chat/completions", json={**BODY, "stream": True})
-    assert r.status_code == 501
-
-
 async def test_invalid_body_400(config, make_client):
     async with make_client(config) as c:
         r = await c.post("/v1/chat/completions", json={"model": "m1"})

@@ -68,18 +68,44 @@ class StrategyError(ValueError):
     """Invalid strategy specification."""
 
 
+def _registry() -> dict[str, type]:
+    from keel.strategies.pin import PinStrategy
+    from keel.strategies.summarize import SummarizeStrategy
+    from keel.strategies.truncate import TruncateStrategy
+    from keel.strategies.validate import ValidateStrategy
+
+    return {c.name: c for c in (TruncateStrategy, SummarizeStrategy, ValidateStrategy, PinStrategy)}
+
+
 def parse_strategy(spec: str, validate_enabled: bool = False) -> list[Strategy]:
     """Parse "a+b" into strategy instances in canonical order."""
-    raise NotImplementedError("T-15")
+    names = [p.strip() for p in (spec or "").split("+") if p.strip()]
+    if not names or names == ["none"]:
+        return []
+    if "none" in names:
+        raise StrategyError("'none' cannot be combined with other strategies")
+    reg = _registry()
+    unknown = [n for n in names if n not in reg]
+    if unknown:
+        raise StrategyError(f"unknown strategy: {', '.join(unknown)}")
+    if len(set(names)) != len(names):
+        raise StrategyError(f"duplicate strategy in {spec!r}")
+    if validate_enabled and "summarize" in names and "validate" not in names:
+        names.append("validate")
+    if "validate" in names and "summarize" not in names:
+        raise StrategyError("'validate' requires 'summarize'")
+    return sorted((reg[n]() for n in names), key=lambda s: s.order)
 
 
 def canonical_name(strategies: list[Strategy]) -> str:
     """Names joined by "+" in order; "none" when empty."""
-    raise NotImplementedError("T-15")
+    return "+".join(s.name for s in strategies) or "none"
 
 
 async def run_strategies(
     strategies: list[Strategy], state: CompactionState, ctx: StrategyContext
 ) -> CompactionState:
     """Apply strategies in sequence."""
-    raise NotImplementedError("T-15")
+    for s in strategies:
+        state = await s.apply(state, ctx)
+    return state

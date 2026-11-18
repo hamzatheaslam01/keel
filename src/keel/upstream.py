@@ -58,7 +58,15 @@ class UpstreamClient:
         return resp, (time.perf_counter() - t0) * 1000
 
     async def forward_stream(self, body: dict[str, Any]) -> AsyncIterator[bytes]:
-        raise NotImplementedError("T-33")
+        up, url, payload, headers = self._prepare(body)
+        async with self._client.stream(
+            "POST", url, json=payload, headers=headers, timeout=up.timeout_s
+        ) as resp:
+            if resp.status_code >= 400:
+                await resp.aread()
+                raise UpstreamError(f"{resp.status_code}: {resp.text[:500]}")
+            async for chunk in resp.aiter_raw():
+                yield chunk
 
     async def complete(
         self,
