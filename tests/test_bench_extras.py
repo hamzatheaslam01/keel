@@ -46,7 +46,7 @@ async def test_summarizer_model_used(config, tmp_path):
     rid = await run_batch(config, sc_dir(tmp_path), ["m1"], ["C1"], [0], tmp_path / "r",
                           summarizer="big", upstream=UpstreamClient(config.upstreams))
     summ = [x for x in b.bodies if x["messages"][0]["content"].startswith("You compress")]
-    agent = [x for x in b.bodies if x not in summ]
+    agent = [x for x in b.bodies if x not in summ and x["messages"][-1]["content"] != "ping"]
     assert summ and all(x["model"] == "big" for x in summ)
     assert all(x["model"] == "m1" for x in agent)
     assert Store(str(tmp_path / "r" / "keel.db")).get_run(rid).args["summarizer"] == "big"

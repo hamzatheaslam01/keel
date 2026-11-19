@@ -296,6 +296,20 @@ class Store:
         )
         return bool(rows[0]["e"])
 
+    def delete_errored_episodes(self, run_id: str) -> int:
+        """Delete errored episodes of a run, and their session traces, so a resume retries them."""
+        with self._lock:
+            sids = [r["session_id"] for r in self._conn.execute(
+                "SELECT session_id FROM episodes WHERE run_id=? AND error IS NOT NULL", (run_id,))]
+            for sid in sids:
+                for table, col in (("requests", "session_id"), ("compactions", "session_id"),
+                                   ("pins", "session_id"), ("sessions", "id")):
+                    self._conn.execute(f"DELETE FROM {table} WHERE {col}=?", (sid,))
+            self._conn.execute(
+                "DELETE FROM episodes WHERE run_id=? AND error IS NOT NULL", (run_id,))
+            self._conn.commit()
+            return len(sids)
+
     def insert_episode(self, ep: Episode) -> int:
         """Insert an episode and return its id."""
         cur = self._write(

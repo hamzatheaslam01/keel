@@ -229,23 +229,74 @@ async def run_batch(
               "extractor_model": config.pins.extractor_model, "sampling": SAMPLING,
               "max_probe_steps": MAX_PROBE_STEPS},
     ))
+    retried = store.delete_errored_episodes(run_id)
+    if retried:
+        print(f"retrying {retried} episodes that errored in an earlier attempt", flush=True)
     upstream = upstream or UpstreamClient(config.upstreams)
-    for c in conditions:
-        cond = CONDITIONS[c]
-        app = create_app(condition_config(config, cond, summarizer), store=store,
-                         upstream=upstream)
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                     base_url="http://keel", timeout=None) as client:
-            for model in models:
-                for s in scenarios:
-                    for seed in seeds:
-                        if store.episode_exists(run_id, s.id, model, c, seed):
-                            continue
-                        t0 = time.perf_counter()
-                        ep = await run_episode(client, store, s, Path(scenarios_dir), model, cond,
-                                               seed, run_id, tools)
-                        store.insert_episode(ep)
-                        print(f"{c} {model} {s.id} s{seed} violated={ep.violated} "
-                              f"err={bool(ep.error)} {time.perf_counter() - t0:.1f}s", flush=True)
-    store.close()
+    try:
+        await preflight(upstream, needed_models(config, models, conditions, summarizer))
+        streak = 0
+        for c in conditions:
+            cond = CONDITIONS[c]
+            app = create_app(condition_config(config, cond, summarizer), store=store,
+                             upstream=upstream)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                         base_url="http://keel", timeout=None) as client:
+                for model in models:
+                    for s in scenarios:
+                        for seed in seeds:
+                            if store.episode_exists(run_id, s.id, model, c, seed):
+                                continue
+                            t0 = time.perf_counter()
+                            ep = await run_episode(client, store, s, Path(scenarios_dir), model,
+                                                   cond, seed, run_id, tools)
+                            store.insert_episode(ep)
+                            print(f"{c} {model} {s.id} s{seed} violated={ep.violated} "
+                                  f"err={bool(ep.error)} {time.perf_counter() - t0:.1f}s",
+                                  flush=True)
+                            streak = streak + 1 if ep.error else 0
+                            if streak >= MAX_ERROR_STREAK:
+                                raise BenchAborted(
+                                    f"stopped after {streak} episodes in a row failed; last "
+                                    f"error: {ep.error}. Fix the cause and rerun the same "
+                                    "command: failed episodes are retried.")
+    finally:
+        store.close()
     return run_id
+
+
+MAX_ERROR_STREAK = 5
+
+
+class BenchAborted(RuntimeError):
+    """The benchmark cannot continue (a model is unreachable or episodes keep failing)."""
+
+
+def needed_models(config: KeelConfig, models: list[str], conditions: list[str],
+                  summarizer: str | None) -> list[str]:
+    """Every model a run will call: agents, summarizer, judge (C5) and extractor (C4)."""
+    need = list(models)
+    if summarizer:
+        need.append(summarizer)
+    if any(CONDITIONS[c].pins == "auto" for c in conditions):
+        need.append(config.pins.extractor_model)
+    if any("validate" in CONDITIONS[c].strategy for c in conditions):
+        need.append(config.validate_.judge_model)
+    return list(dict.fromkeys(need))
+
+
+async def preflight(upstream: UpstreamClient, models: list[str]) -> None:
+    """Make one tiny call to each model so an unreachable server fails fast with a clear message."""
+    from keel.upstream import UnknownModelError, UpstreamError
+
+    for m in models:
+        try:
+            await upstream.complete(m, [{"role": "user", "content": "ping"}], temperature=0.0,
+                                    max_tokens=1)
+        except UnknownModelError as e:
+            raise BenchAborted(f"model {m!r} is not in any upstream in the config") from e
+        except UpstreamError as e:
+            up = upstream.route(m)
+            raise BenchAborted(
+                f"model {m!r} is not reachable at {up.base_url} ({e}). "
+                "Is the model server (e.g. llama-server) running?") from e

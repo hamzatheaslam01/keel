@@ -73,10 +73,15 @@ def _bench_run(args: argparse.Namespace) -> int:
         return _err(f"unknown summarizer model: {args.summarizer}")
     print(f"bench run: models={models} conditions={conditions} seeds={args.seeds} "
           f"summarizer={args.summarizer or 'same_as_agent'} stress={args.stress}", flush=True)
-    run_id = asyncio.run(run_batch(
-        cfg, Path(args.scenarios), models, conditions, list(range(args.seeds)), Path(args.out),
-        limit=args.limit, summarizer=args.summarizer, stress=args.stress,
-    ))
+    from bench.runner import BenchAborted
+
+    try:
+        run_id = asyncio.run(run_batch(
+            cfg, Path(args.scenarios), models, conditions, list(range(args.seeds)),
+            Path(args.out), limit=args.limit, summarizer=args.summarizer, stress=args.stress,
+        ))
+    except BenchAborted as e:
+        return _err(str(e))
     print(run_id)
     return 0
 
@@ -87,7 +92,10 @@ def _bench_report(args: argparse.Namespace) -> int:
     out = Path(args.out_dir)
     if not (out / "keel.db").is_file():
         return _err(f"{out / 'keel.db'} not found")
-    md, csv = write_report(out)
+    try:
+        md, csv = write_report(out)
+    except PermissionError as e:
+        return _err(f"cannot write {e.filename}: close it if it is open (e.g. in Excel) and retry")
     print(md)
     print(csv)
     return 0
