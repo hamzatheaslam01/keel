@@ -56,3 +56,42 @@ async def test_truncate_pin_overhead_p95_under_20ms():
     assert any(r["cache_status"] == "hit" for r in rows)
     (rec,) = store.list_compactions("perf")
     assert any("[truncated" in str(m.get("content")) for m in rec.compacted)
+
+
+REAL_TOKENIZER = "models/qwen3-1.7b/tokenizer.json"
+
+
+@pytest.mark.perf
+@pytest.mark.skipif(not __import__("os").path.isfile(REAL_TOKENIZER),
+                    reason="real Qwen3 tokenizer not downloaded")
+async def test_real_tokenizer_overhead_p95_under_20ms():
+    from pathlib import Path
+
+    from bench.mock_tools import load_tools, tool_definitions
+    from bench.runner import build_history
+    from bench.schema import load_scenario
+
+    cfg = KeelConfig(server=ServerConfig(db=":memory:"),
+                     upstreams=[UpstreamConfig(name="u", base_url=UP, models=["qwen3-1.7b"])],
+                     tokenizers={"qwen3-1.7b": REAL_TOKENIZER})
+    cfg.compaction.strategy = "truncate+pin"
+    store = Store(":memory:")
+    up = UpstreamClient(cfg.upstreams, transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json=chat_json("ok"))))
+    app = create_app(cfg, store=store, upstream=up)
+    s = load_scenario(Path("scenarios/cal-002.yaml"))
+    hist, _ = build_history(s, Path("scenarios"))
+    tools = tool_definitions(s.tools, load_tools(Path("scenarios/tools.yaml")))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                 base_url="http://keel") as c:
+        for i in range(30):
+            hist = hist + [{"role": "user", "content": f"next {i}"}]
+            await c.post("/v1/chat/completions",
+                         json={"model": "qwen3-1.7b", "messages": hist, "tools": tools},
+                         headers={"X-Keel-Session": "real",
+                                  **({"X-Keel-Force-Compact": "true"} if i == 0 else {})})
+    rows = store.list_requests("real")
+    assert all(r["tokenizer"] == "hf" for r in rows)
+    ms = [r["proxy_ms"] for r in rows]
+    print(f"\nreal tokenizer proxy_ms p95={p95(ms):.2f} first={ms[0]:.2f}")
+    assert p95(ms) < 20.0

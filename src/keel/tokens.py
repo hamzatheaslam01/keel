@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
@@ -23,9 +24,18 @@ class TokenCount:
 
 
 class TokenRegistry:
-    def __init__(self, paths: dict[str, str]) -> None:
+    def __init__(self, paths: dict[str, str], max_cached_counts: int = 50_000) -> None:
         self._paths = dict(paths)
         self._cache: dict[str, Tokenizer | None] = {}
+        # Clients resend the whole history every turn, so the same message texts are
+        # counted again and again. Remember counts by a digest of (model, text).
+        self._counts: dict[bytes, int] = {}
+        self._max_counts = max_cached_counts
+
+    def warm(self) -> None:
+        """Load every configured tokenizer now instead of on the first request."""
+        for model in self._paths:
+            self._get(model)
 
     def _get(self, model: str) -> Tokenizer | None:
         if model in self._cache:
@@ -51,19 +61,53 @@ class TokenRegistry:
         tok = self._get(model)
         if tok is None:
             return math.ceil(len(text) / 4)
-        return len(tok.encode(text, add_special_tokens=False).ids)
+        key = self._key(model, text)
+        n = self._counts.get(key)
+        if n is None:
+            n = len(tok.encode(text, add_special_tokens=False).ids)
+            if len(self._counts) >= self._max_counts:
+                self._counts.clear()
+            self._counts[key] = n
+        return n
+
+    def _key(self, model: str, text: str) -> bytes:
+        return hashlib.blake2b(f"{model}\x00{text}".encode(), digest_size=16).digest()
+
+    def _prime(self, model: str, texts: list[str]) -> None:
+        """Tokenize all not-yet-counted texts in one parallel batch and cache the counts."""
+        tok = self._get(model)
+        if tok is None:
+            return
+        todo: dict[bytes, str] = {}
+        for t in texts:
+            if t:
+                k = self._key(model, t)
+                if k not in self._counts:
+                    todo[k] = t
+        if len(todo) < 2:
+            return
+        encs = tok.encode_batch(list(todo.values()), add_special_tokens=False)
+        if len(self._counts) + len(todo) > self._max_counts:
+            self._counts.clear()
+        for k, enc in zip(todo, encs, strict=True):
+            self._counts[k] = len(enc.ids)
 
     def count_messages(
         self, model: str, messages: list[Message], tools: list[dict] | None = None
     ) -> TokenCount:
-        n = sum(self.count_text(model, text_of(m)) + 4 for m in messages)
-        if tools:
-            n += self.count_text(model, json.dumps(tools, sort_keys=True))
+        texts = [text_of(m) for m in messages]
+        tools_text = json.dumps(tools, sort_keys=True) if tools else ""
+        self._prime(model, texts + [tools_text])
+        n = sum(self.count_text(model, t) + 4 for t in texts)
+        if tools_text:
+            n += self.count_text(model, tools_text)
         return TokenCount(n, self.method(model))
 
     def head_tail(self, model: str, text: str, head: int, tail: int) -> tuple[str, str, int]:
         tok = self._get(model)
         if tok is not None:
+            if self.count_text(model, text) <= head + tail:  # cached; avoids a re-encode
+                return text, "", 0
             ids = tok.encode(text, add_special_tokens=False).ids
             if len(ids) <= head + tail:
                 return text, "", 0

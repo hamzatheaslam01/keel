@@ -27,6 +27,7 @@ def create_app(
         upstream=upstream or UpstreamClient(config.upstreams),
         tokens=tokens or TokenRegistry(config.tokenizers),
     )
+    deps.tokens.warm()
     app = FastAPI(title="keel")
     app.state.deps = deps
 

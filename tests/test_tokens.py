@@ -62,3 +62,39 @@ def test_head_tail_fallback():
     reg = TokenRegistry({})
     head, tail, removed = reg.head_tail("x", "x" * 100, 5, 5)
     assert len(head) == 20 and len(tail) == 20 and removed == 15
+
+
+def test_count_cache_reuses_result(tok_path, monkeypatch):
+    reg = TokenRegistry({"m": tok_path})
+    assert reg.count_text("m", "hello world") == 2
+    tok = reg._get("m")
+    calls = []
+    real = tok.encode
+    monkeypatch.setattr(reg, "_get", lambda model: type("T", (), {
+        "encode": lambda self, *a, **k: (calls.append(1), real(*a, **k))[1]})())
+    assert reg.count_text("m", "hello world") == 2 and calls == []
+    assert reg.count_text("m", "hello world hello") == 3 and calls == [1]
+
+
+def test_count_cache_is_bounded(tok_path):
+    reg = TokenRegistry({"m": tok_path}, max_cached_counts=3)
+    for i in range(10):
+        reg.count_text("m", "hello " * (i + 1))
+    assert len(reg._counts) <= 3
+    assert reg.count_text("m", "hello hello") == 2
+
+
+def test_count_cache_is_per_model(tok_path, tmp_path):
+    vocab = {"[UNK]": 0, "hello": 1}
+    tok = Tokenizer(models.WordLevel(vocab=vocab, unk_token="[UNK]"))
+    p2 = tmp_path / "t2.json"
+    tok.save(str(p2))
+    reg = TokenRegistry({"a": tok_path, "b": str(p2)})
+    assert reg.count_text("a", "hello world") == 2
+    assert reg.count_text("b", "hello world") == 1
+
+
+def test_warm_loads_tokenizers(tok_path):
+    reg = TokenRegistry({"m": tok_path})
+    reg.warm()
+    assert reg._cache["m"] is not None
