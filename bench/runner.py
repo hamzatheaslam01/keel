@@ -219,7 +219,8 @@ async def run_batch(
     for m in models:
         f = config.model_files.get(m)
         model_hashes[m] = file_sha256(f) if f and Path(f).is_file() else "unknown"
-    store.insert_run(RunInfo(
+    is_resume = store.get_run(run_id) is not None
+    run_info = RunInfo(
         id=run_id, started_at=utcnow(), git_sha=git_sha(), config=_redacted_config(config),
         model_hashes=model_hashes, seeds=list(seeds),
         args={"scenarios_dir": str(scenarios_dir), "models": models, "conditions": conditions,
@@ -228,7 +229,11 @@ async def run_batch(
               "judge_model": config.validate_.judge_model,
               "extractor_model": config.pins.extractor_model, "sampling": SAMPLING,
               "max_probe_steps": MAX_PROBE_STEPS},
-    ))
+    )
+    if is_resume:
+        store.record_resume(run_info)
+    else:
+        store.insert_run(run_info)
     retried = store.delete_errored_episodes(run_id)
     if retried:
         print(f"retrying {retried} episodes that errored in an earlier attempt", flush=True)

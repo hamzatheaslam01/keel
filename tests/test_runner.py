@@ -170,3 +170,15 @@ async def test_aborts_after_error_streak(config, tmp_path, monkeypatch):
         await run_batch(config, d, ["m1"], ["C1"], [0], tmp_path / "r",
                         upstream=UpstreamClient(config.upstreams))
     assert len(Store(str(tmp_path / "r" / "keel.db")).list_episodes("r")) == 3
+
+
+@respx.mock
+async def test_resume_with_new_model_merges_run_metadata(config, tmp_path):
+    config.upstreams[0].models.append("m2")
+    rid, store, _ = await go(config, tmp_path, ["C0"])
+    await run_batch(config, tmp_path / "sc", ["m2"], ["C1"], [0], tmp_path / "run-t",
+                    upstream=UpstreamClient(config.upstreams))
+    run = Store(str(tmp_path / "run-t" / "keel.db")).get_run(rid)
+    assert run.args["models"] == ["m1", "m2"] and run.args["conditions"] == ["C0", "C1"]
+    assert set(run.model_hashes) == {"m1", "m2"}
+    assert run.args["resumes"][0]["models"] == ["m2"]

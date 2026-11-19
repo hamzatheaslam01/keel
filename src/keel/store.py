@@ -272,6 +272,23 @@ class Store:
              _dumps(run.model_hashes), _dumps(run.seeds), _dumps(run.args)),
         )
 
+    def record_resume(self, run: RunInfo) -> None:
+        """Merge a later invocation into an existing run: new model hashes, the union of models
+        and conditions, and an entry in args["resumes"] with that invocation's settings."""
+        existing = self.get_run(run.id)
+        if existing is None:
+            return
+        hashes = {**existing.model_hashes, **run.model_hashes}
+        args = dict(existing.args)
+        for key in ("models", "conditions"):
+            args[key] = list(dict.fromkeys(list(args.get(key, [])) + list(run.args.get(key, []))))
+        args["resumes"] = list(args.get("resumes", [])) + [{
+            "started_at": run.started_at, "git_sha": run.git_sha, "config": run.config,
+            **{k: run.args.get(k) for k in ("models", "conditions", "seeds", "summarizer")},
+        }]
+        self._write("UPDATE runs SET model_hashes_json=?, args_json=? WHERE id=?",
+                    (_dumps(hashes), _dumps(args), run.id))
+
     def get_run(self, run_id: str) -> RunInfo | None:
         """Return the run or None."""
         rows = self._rows("SELECT * FROM runs WHERE id=?", (run_id,))
